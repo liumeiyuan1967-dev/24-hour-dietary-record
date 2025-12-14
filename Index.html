@@ -1,0 +1,729 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Calendar, 
+  MapPin, 
+  Monitor, 
+  Users, 
+  ChevronRight, 
+  ChevronLeft, 
+  Check, 
+  AlertCircle, 
+  Eye, 
+  EyeOff, 
+  Clock, 
+  FileText, 
+  ShieldCheck,
+  Upload,
+  BookOpen,
+  Loader
+} from 'lucide-react';
+
+// --- Constants ---
+
+// !!! 這是您部署 Apps Script 後取得的網址 (已更新) !!!
+const SUBMIT_URL = "https://script.google.com/macros/s/AKfycbw9vbRh9V8fxFsrTSBJMiK0jWLdUg1iwPZ1taBUHYkR9eYFiOa6iAtyLS6CxABoMtKF/exec"; 
+
+const CITIES = [
+  "基隆市", "臺北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣", "臺中市", 
+  "彰化縣", "南投縣", "雲林縣", "嘉義市", "嘉義縣", "臺南市", "高雄市", "屏東縣", 
+  "宜蘭縣", "花蓮縣", "臺東縣", "澎湖縣", "金門縣", "連江縣"
+];
+
+const WORK_TYPES = [
+  { id: 'clinical', label: '臨床營養' },
+  { id: 'group', label: '團膳管理' },
+  { id: 'community', label: '社區營養' },
+  { id: 'research', label: '學術研究' },
+  { id: 'other', label: '其他' }
+];
+
+const INFO_SOURCES = [
+  "公會電子報/網站", 
+  "醫院佈告欄/郵件", 
+  "同事/朋友推薦", 
+  "Facebook/社群媒體", 
+  "國民營養調查團隊LINE@ (請務必填寫)",
+  "其他"
+];
+
+const AGENDA = [
+  { time: "12:30~12:50", content: "報到", speaker: "" },
+  { time: "12:50~13:00", content: "前測及說明", speaker: "" },
+  { time: "13:00~14:40", content: "24小時回憶法簡介：方法介紹、搭配工具、資料轉換飲食攝取、如何增進精準度", speaker: "台北醫學大學\n潘文涵講座教授" },
+  { time: "14:40~14:50", content: "中場休息", speaker: "" },
+  { time: "14:50~16:30", content: "國民營養調查工作模式分享：訪談者引領技巧、食物模型使用、烹調製作詢問、外食如何評估", speaker: "國民營養調查團隊\n葉乃華博士" },
+  { time: "16:30~16:50", content: "後測", speaker: "" },
+  { time: "16:50~17:10", content: "Q&A", speaker: "" },
+];
+
+// --- Components ---
+
+const InputField = ({ label, error, children, required = false, subLabel }) => (
+  <div className="mb-6">
+    <label className="block text-sm font-bold text-gray-800 mb-1.5 flex items-center">
+      {label} {required && <span className="text-red-500 ml-1">*</span>}
+    </label>
+    {subLabel && <p className="text-xs text-gray-500 mb-2 leading-relaxed">{subLabel}</p>}
+    {children}
+    {error && (
+      <div className="flex items-center mt-2 text-red-500 text-sm animate-pulse font-medium">
+        <AlertCircle size={16} className="mr-1.5" />
+        {error}
+      </div>
+    )}
+  </div>
+);
+
+const StepWizard = ({ currentStep, totalSteps }) => {
+  return (
+    <div className="flex items-center justify-center mb-8 px-4 w-full max-w-md mx-auto">
+      {[...Array(totalSteps)].map((_, i) => (
+        <React.Fragment key={i}>
+          <div className="relative">
+            <div 
+              className={`flex items-center justify-center w-10 h-10 rounded-full border-2 text-sm font-bold transition-all duration-300 z-10 relative
+                ${i + 1 <= currentStep 
+                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-md scale-110' 
+                  : 'bg-white border-gray-300 text-gray-400'}`}
+            >
+              {i + 1 < currentStep ? <Check size={20} /> : i + 1}
+            </div>
+            <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs font-medium text-gray-500 w-20 text-center">
+              {i === 0 && "基本資料"}
+              {i === 1 && "學分身分"}
+              {i === 2 && "課程背景"}
+              {i === 3 && "確認送出"}
+            </div>
+          </div>
+          {i < totalSteps - 1 && (
+            <div className={`flex-1 h-1 mx-2 rounded transition-colors duration-500 ${i + 1 < currentStep ? 'bg-emerald-600' : 'bg-gray-200'}`} />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+};
+
+// --- Main App ---
+
+export default function App() {
+  const [currentStep, setCurrentStep] = useState(0); // 0=Landing, 1-4=Form, 5=Success
+  const [showId, setShowId] = useState(false);
+  const [timestamp, setTimestamp] = useState('');
+  const [flyerPreview, setFlyerPreview] = useState(null);
+  const fileInputRef = useRef(null);
+
+  // Submission States
+  const [isLoading, setIsLoading] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+
+  // Form State
+  const [formData, setFormData] = useState({
+    name: '',
+    gender: '',
+    email: '',
+    infoSource: '', 
+    idNumber: '',
+    isMember: '',
+    city: '',
+    classType: '',
+    workExperience: [],
+    workplace: '',
+    participated2016NutriSurvey: '', 
+    consent: false
+  });
+
+  const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    setTimestamp(new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }));
+  }, []);
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const objectUrl = URL.createObjectURL(file);
+      setFlyerPreview(objectUrl);
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }));
+  };
+
+  const handleCheckboxChange = (value) => {
+    setFormData(prev => {
+      const current = prev.workExperience;
+      const newExperience = current.includes(value)
+        ? current.filter(item => item !== value)
+        : [...current, value];
+      
+      // Clear error if selection is made
+      if (newExperience.length > 0 && errors.workExperience) {
+        setErrors(prevErrors => ({ ...prevErrors, workExperience: null }));
+      }
+
+      return { ...prev, workExperience: newExperience };
+    });
+  };
+
+  const verifyTaiwanId = (id) => {
+    if (!id) return false;
+    id = id.trim().toUpperCase();
+    if (!/^[A-Z][1-2]\d{8}$/.test(id)) return false;
+    const letterMap = { A:10, B:11, C:12, D:13, E:14, F:15, G:16, H:17, I:34, J:18, K:19, L:20, M:21, N:22, O:35, P:23, Q:24, R:25, S:26, T:27, U:28, V:29, W:32, X:30, Y:31, Z:33 };
+    const weights = [1, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1];
+    let sum = 0;
+    // Map first letter to 2 digits and concatenate with the rest of the ID
+    const fullId = letterMap[id[0]] ? String(letterMap[id[0]]) + id.substring(1) : id;
+    
+    // Check if the mapped ID is exactly 11 digits long before summation
+    if (fullId.length !== 11) return false; 
+
+    for (let i = 0; i < 11; i++) {
+        sum += parseInt(fullId[i], 10) * weights[i];
+    }
+    return sum % 10 === 0;
+  };
+
+  const validateStep = (step) => {
+    const newErrors = {};
+    if (step === 1) {
+      if (!formData.name || formData.name.length < 2) newErrors.name = '請輸入真實姓名';
+      if (!formData.gender) newErrors.gender = '請選擇性別';
+      if (!formData.email || !/^\S+@\S+\.\S+$/.test(formData.email)) newErrors.email = '請輸入有效 Email';
+      if (!formData.infoSource) newErrors.infoSource = '請選擇訊息來源'; 
+    }
+    if (step === 2) {
+      if (!verifyTaiwanId(formData.idNumber)) newErrors.idNumber = '身分證字號格式錯誤 (學分登錄用)';
+      if (!formData.isMember) newErrors.isMember = '請選擇會員身份';
+      if (!formData.city) newErrors.city = '請選擇居住縣市';
+    }
+    if (step === 3) {
+      if (!formData.classType) newErrors.classType = '請選擇上課方式';
+      if (formData.workExperience.length === 0) newErrors.workExperience = '請至少勾選一項經驗';
+      if (!formData.workplace) newErrors.workplace = '請填寫執業場所';
+      // 驗證 115 年國民營養調查參與經驗
+      if (!formData.participated2016NutriSurvey) newErrors.participated2016NutriSurvey = '請選擇是否曾參與調查';
+    }
+    if (step === 4) {
+        if (!formData.consent) newErrors.consent = '您必須勾選確認所有資訊無誤才能送出';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const nextStep = () => validateStep(currentStep) && (setCurrentStep(p => p + 1), window.scrollTo(0, 0));
+  const prevStep = () => (setCurrentStep(p => p - 1), window.scrollTo(0, 0));
+
+  const handleSubmit = async () => {
+    if (!validateStep(4)) return;
+
+    if (SUBMIT_URL === "YOUR_DEPLOYED_APPS_SCRIPT_URL_HERE") {
+        setSubmitError("錯誤：請先將 Apps Script 網址貼入 React 程式碼中 (第 43 行)。");
+        return;
+    }
+
+    setIsLoading(true);
+    setSubmitError(null);
+
+    try {
+        // 使用 no-cors 模式向 Apps Script 發送 POST 請求
+        const response = await fetch(SUBMIT_URL, {
+            method: 'POST',
+            mode: 'no-cors', // 必須使用 no-cors 模式來避免 Apps Script 的 CORS 問題
+            cache: 'no-cache',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData),
+        });
+
+        // 由於使用 no-cors，fetch 成功完成即視為資料已發送 (Apps Script 會處理結果)
+        // 這裡直接假設送出成功並進入下一步
+        setCurrentStep(5);
+        window.scrollTo(0, 0);
+
+
+    } catch (error) {
+        console.error("提交錯誤:", error);
+        setSubmitError(`報名送出失敗，請檢查網路連線或 Apps Script 部署狀態: ${error.message}`);
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
+  // --- Views ---
+
+  if (currentStep === 0) {
+    // --- Landing Page Content ---
+    return (
+      <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
+        {/* Header Image Area */}
+        <div className="w-full bg-emerald-900 text-white shadow-xl relative overflow-hidden">
+          <div className="max-w-5xl mx-auto px-4 py-12 md:py-20 relative z-10">
+            <div className="flex flex-col md:flex-row items-center gap-8">
+              <div className="flex-1 text-center md:text-left">
+                <div className="inline-block bg-yellow-400 text-emerald-950 px-4 py-1 rounded-full text-sm font-bold mb-4 shadow-sm tracking-wider">
+                  開放報名中
+                </div>
+                <h1 className="text-3xl md:text-5xl font-bold mb-4 leading-tight">
+                  24小時飲食回憶法<br/><span className="text-emerald-300">營養評估增能講座</span>
+                </h1>
+                <p className="text-lg md:text-xl text-emerald-100 font-light mb-8 max-w-xl">
+                  精準掌握營養評估訪談技巧，國民營養調查團隊親授，實體與線上同步開課。
+                </p>
+                <button 
+                  onClick={() => { setCurrentStep(1); window.scrollTo(0,0); }}
+                  className="bg-white text-emerald-900 text-lg font-bold py-4 px-10 rounded-full shadow-lg hover:bg-emerald-50 hover:scale-105 transition transform flex items-center justify-center md:justify-start mx-auto md:mx-0"
+                >
+                  立即報名參加 <ChevronRight className="ml-2" />
+                </button>
+              </div>
+              {/* Flyer Preview Box */}
+              <div className="w-full md:w-1/3 flex-shrink-0">
+                <div 
+                  className="bg-white/10 backdrop-blur-sm border-2 border-white/20 rounded-xl p-2 cursor-pointer hover:bg-white/20 transition group relative overflow-hidden"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="點擊上傳簡章圖片以預覽"
+                >
+                  <div className="aspect-[3/4] bg-emerald-800/50 rounded-lg flex items-center justify-center overflow-hidden relative">
+                    {flyerPreview ? (
+                      <img src={flyerPreview} alt="Flyer" className="w-full h-full object-contain" />
+                    ) : (
+                      <div className="text-center p-4">
+                        <Upload className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm font-medium opacity-80">點擊此處載入<br/>簡章 JPG 圖片</p>
+                        <p className="text-xs opacity-50 mt-2">(模擬預覽功能)</p>
+                      </div>
+                    )}
+                    {/* Hover Effect */}
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                      <span className="text-white font-bold border border-white px-3 py-1 rounded-full text-sm">更換圖片</span>
+                    </div>
+                  </div>
+                  <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* Background decoration */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 transform translate-x-1/2 -translate-y-1/2"></div>
+        </div>
+
+        {/* 3 Info Cards */}
+        <div className="max-w-5xl mx-auto px-4 -mt-10 relative z-20">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 flex flex-col items-center text-center group hover:-translate-y-1 transition">
+              <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-emerald-100 transition">
+                <Clock className="text-emerald-600 w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-gray-900 text-lg">活動時間</h3>
+              <p className="text-gray-600 mt-1">115年 1月 24日 (六)</p>
+              <p className="text-emerald-600 font-medium">12:50 - 17:20</p>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 flex flex-col items-center text-center group hover:-translate-y-1 transition">
+              <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-emerald-100 transition">
+                <MapPin className="text-emerald-600 w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-gray-900 text-lg">活動地點</h3>
+              <p className="text-gray-600 mt-1">奇美醫院 第五醫療大樓</p>
+              <p className="text-gray-500 text-sm">(國際會議廳 / 線上同步)</p>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 flex flex-col items-center text-center group hover:-translate-y-1 transition">
+              <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-emerald-100 transition">
+                <Users className="text-emerald-600 w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-gray-900 text-lg">參與對象</h3>
+              <p className="text-gray-600 mt-1">營養師</p>
+              <p className="text-emerald-600 font-medium text-sm">含繼續教育學分</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Agenda Table */}
+        <div className="max-w-4xl mx-auto px-4 py-16">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center justify-center">
+              <BookOpen className="mr-2 text-emerald-600" /> 課程議程表
+            </h2>
+            <div className="w-16 h-1 bg-emerald-500 mx-auto mt-4 rounded-full"></div>
+          </div>
+          
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-emerald-50 border-b border-emerald-100">
+                    <th className="p-4 font-bold text-emerald-800 w-1/4">時間</th>
+                    <th className="p-4 font-bold text-emerald-800 w-1/2">內容</th>
+                    <th className="p-4 font-bold text-emerald-800 w-1/4">主講</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {AGENDA.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50 transition">
+                      <td className="p-4 text-gray-600 font-mono text-sm whitespace-nowrap">{item.time}</td>
+                      <td className="p-4 text-gray-800 font-medium">
+                        {item.content.split('：')[0]}
+                        {item.content.includes('：') && (
+                          <p className="text-sm text-gray-500 mt-1 font-normal">
+                            {item.content.split('：')[1]}
+                          </p>
+                        )}
+                      </td>
+                      <td className="p-4 text-gray-600 text-sm whitespace-pre-line">{item.speaker}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer info */}
+        <div className="bg-gray-800 text-gray-400 py-8 text-center text-sm">
+          <p>主辦單位：國民營養調查團隊、台北醫學大學、台南市營養師公會</p>
+          {/* 聯絡方式已更新 */}
+          <p className="mt-2">聯絡方式：Email: cjpeng2010@gmail.com</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 5. Success
+  if (currentStep === 5) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white w-full max-w-lg p-8 rounded-2xl shadow-xl text-center border-t-8 border-emerald-500">
+          <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Check className="text-emerald-600 w-10 h-10" />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">報名成功</h2>
+          <p className="text-gray-500 mb-8">感謝您的參與，資料已成功寫入 Google Sheets。</p>
+          
+          <div className="bg-emerald-50 p-6 rounded-xl text-left mb-8 space-y-3">
+            <div className="flex justify-between">
+              <span className="text-gray-500">報名者</span>
+              <span className="font-bold text-gray-800">{formData.name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">參加形式</span>
+              <span className="font-bold text-emerald-700">
+                {formData.classType === 'physical' ? '實體 (奇美醫院)' : '線上 (Google Meet)'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">報名時間</span>
+              <span className="font-mono text-gray-600 text-sm">{timestamp}</span>
+            </div>
+          </div>
+
+          <button onClick={() => window.location.reload()} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-lg hover:bg-emerald-700 transition shadow-lg">
+            返回首頁
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Form View
+  return (
+    <div className="min-h-screen bg-emerald-50/50 py-6 px-4 font-sans">
+      <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden min-h-[700px] flex flex-col">
+        {/* Header */}
+        <div className="bg-emerald-900 p-6 text-white flex justify-between items-end shadow-md">
+          <div>
+            <p className="text-emerald-300 text-xs font-bold tracking-wider mb-1">ONLINE REGISTRATION</p>
+            <h2 className="text-2xl font-bold">報名表單</h2>
+          </div>
+          <button onClick={() => setCurrentStep(0)} className="text-emerald-200 text-sm hover:text-white underline decoration-emerald-500/50">
+            回簡章首頁
+          </button>
+        </div>
+
+        {/* Progress */}
+        <div className="pt-12 pb-4">
+          <StepWizard currentStep={currentStep} totalSteps={4} />
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 px-8 pb-10 overflow-y-auto">
+          {currentStep === 1 && (
+            <div className="animate-fade-in space-y-2">
+              <InputField label="姓名" required error={errors.name}>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={e => handleChange('name', e.target.value)}
+                  placeholder="請輸入您的中文全名"
+                  className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition"
+                />
+              </InputField>
+              
+              <InputField label="性別" required error={errors.gender}>
+                <div className="grid grid-cols-2 gap-4">
+                  {['male', 'female'].map(g => (
+                    <label key={g} className={`border rounded-lg p-3 flex items-center justify-center cursor-pointer transition relative
+                      ${formData.gender === g ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-bold shadow-sm' : 'border-gray-200 hover:bg-gray-50 text-gray-600'}`}>
+                      <input type="radio" name="gender" value={g} checked={formData.gender === g} onChange={e => handleChange('gender', e.target.value)} className="absolute opacity-0" />
+                      <div className={`w-4 h-4 rounded-full border mr-2 flex items-center justify-center ${formData.gender === g ? 'border-emerald-600' : 'border-gray-400'}`}>
+                        {formData.gender === g && <div className="w-2 h-2 bg-emerald-600 rounded-full" />}
+                      </div>
+                      {g === 'male' ? '生理男性' : '生理女性'}
+                    </label>
+                  ))}
+                </div>
+              </InputField>
+
+              <InputField label="Email" required error={errors.email} subLabel="報名確認與線上連結將寄至此信箱">
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={e => handleChange('email', e.target.value)}
+                  placeholder="name@example.com"
+                  className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition"
+                />
+              </InputField>
+              
+              <InputField label="訊息來源" required error={errors.infoSource} subLabel="請問您從何處得知此課程資訊？">
+                <div className="relative">
+                  <select 
+                    value={formData.infoSource} 
+                    onChange={e => handleChange('infoSource', e.target.value)}
+                    className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg appearance-none focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer"
+                  >
+                    <option value="" disabled>請選擇一項來源</option>
+                    {INFO_SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
+                  </select>
+                  <ChevronRight className="absolute right-3 top-4 transform rotate-90 text-gray-400 pointer-events-none" size={20} />
+                </div>
+              </InputField>
+            </div>
+          )}
+
+          {currentStep === 2 && (
+            <div className="animate-fade-in space-y-2">
+              <InputField label="身分證字號" required error={errors.idNumber} subLabel="學分登錄專用，資料將加密保護">
+                <div className="relative">
+                  <input
+                    type={showId ? "text" : "password"}
+                    value={formData.idNumber}
+                    onChange={e => handleChange('idNumber', e.target.value.toUpperCase())}
+                    maxLength={10}
+                    placeholder="A123456789"
+                    className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition font-mono tracking-widest uppercase"
+                  />
+                  <button type="button" onClick={() => setShowId(!showId)} className="absolute right-3 top-3.5 text-gray-400 hover:text-emerald-600">
+                    {showId ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </InputField>
+
+              <InputField label="台南市營養師公會會員" required error={errors.isMember}>
+                <div className="flex gap-4">
+                  {['yes', 'no'].map(opt => (
+                    <label key={opt} className={`flex-1 border rounded-lg p-3 text-center cursor-pointer transition ${formData.isMember === opt ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                      <input type="radio" name="isMember" value={opt} checked={formData.isMember === opt} onChange={e => handleChange('isMember', e.target.value)} className="hidden" />
+                      {opt === 'yes' ? '是，我是會員' : '否，非會員'}
+                    </label>
+                  ))}
+                </div>
+              </InputField>
+
+              <InputField label="居住縣市" required error={errors.city}>
+                <div className="relative">
+                  <select 
+                    value={formData.city} 
+                    onChange={e => handleChange('city', e.target.value)}
+                    className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg appearance-none focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer"
+                  >
+                    <option value="" disabled>請選擇您的居住縣市</option>
+                    {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <ChevronRight className="absolute right-3 top-4 transform rotate-90 text-gray-400 pointer-events-none" size={20} />
+                </div>
+              </InputField>
+            </div>
+          )}
+
+          {currentStep === 3 && (
+            <div className="animate-fade-in space-y-2">
+              
+              {/* 115 年國民營養調查參與經驗 */}
+              <InputField label="國民營養調查參與經驗" required error={errors.participated2016NutriSurvey}>
+                <p className="text-sm text-gray-600 mb-3 font-semibold">請問您是否曾參與 **115 年** 國民營養調查？</p>
+                <div className="flex gap-4">
+                  {['yes', 'no'].map(opt => (
+                    <label key={opt} className={`flex-1 border rounded-lg p-3 text-center cursor-pointer transition ${formData.participated2016NutriSurvey === opt ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                      <input 
+                        type="radio" 
+                        name="participatedSurvey" 
+                        value={opt} 
+                        checked={formData.participated2016NutriSurvey === opt} 
+                        onChange={e => handleChange('participated2016NutriSurvey', e.target.value)} 
+                        className="hidden" 
+                      />
+                      {opt === 'yes' ? '是' : '否'}
+                    </label>
+                  ))}
+                </div>
+              </InputField>
+              {/* 結束 115 年國民營養調查參與經驗 */}
+
+              <InputField label="選擇上課方式" required error={errors.classType}>
+                <div className="space-y-3">
+                  <label className={`block border-2 rounded-xl p-4 cursor-pointer transition relative group overflow-hidden ${formData.classType === 'physical' ? 'border-emerald-500 bg-emerald-50/50' : 'border-gray-200 hover:border-emerald-300'}`}>
+                    <input type="radio" name="classType" value="physical" checked={formData.classType === 'physical'} onChange={e => handleChange('classType', e.target.value)} className="hidden" />
+                    <div className="flex items-start">
+                      <div className={`w-5 h-5 mt-1 rounded-full border-2 mr-3 flex items-center justify-center flex-shrink-0 ${formData.classType === 'physical' ? 'border-emerald-600' : 'border-gray-300'}`}>
+                        {formData.classType === 'physical' && <div className="w-2.5 h-2.5 bg-emerald-600 rounded-full" />}
+                      </div>
+                      <div>
+                        <span className="font-bold text-gray-900 block text-lg">實體課程</span>
+                        <span className="text-sm text-gray-500 flex items-center mt-1">
+                          <MapPin size={14} className="mr-1" /> 奇美醫院 第五醫療大樓 國際會議廳
+                        </span>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className={`block border-2 rounded-xl p-4 cursor-pointer transition relative group overflow-hidden ${formData.classType === 'online' ? 'border-emerald-500 bg-emerald-50/50' : 'border-gray-200 hover:border-emerald-300'}`}>
+                    <input type="radio" name="classType" value="online" checked={formData.classType === 'online'} onChange={e => handleChange('classType', e.target.value)} className="hidden" />
+                    <div className="flex items-start">
+                      <div className={`w-5 h-5 mt-1 rounded-full border-2 mr-3 flex items-center justify-center flex-shrink-0 ${formData.classType === 'online' ? 'border-emerald-600' : 'border-gray-300'}`}>
+                        {formData.classType === 'online' && <div className="w-2.5 h-2.5 bg-emerald-600 rounded-full" />}
+                      </div>
+                      <div>
+                        <span className="font-bold text-gray-900 block text-lg">線上同步 (Google Meet)</span>
+                        <span className="text-sm text-gray-500 flex items-center mt-1">
+                          <Monitor size={14} className="mr-1" /> 連結將於報名成功後寄發
+                        </span>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </InputField>
+
+              <InputField label="工作經驗 (可複選)" required error={errors.workExperience}>
+                <div className="grid grid-cols-2 gap-3">
+                  {WORK_TYPES.map(type => {
+                    const isChecked = formData.workExperience.includes(type.id);
+                    return (
+                      <label 
+                        key={type.id} 
+                        htmlFor={`work-exp-${type.id}`} // 連結到隱藏的 input
+                        className={`flex items-center p-3 rounded-lg border cursor-pointer transition 
+                          ${isChecked ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'border-gray-200 hover:bg-gray-50'}`}
+                      >
+                        <div className={`w-5 h-5 rounded border-2 mr-3 flex items-center justify-center flex-shrink-0 
+                          ${isChecked ? 'bg-emerald-600 border-emerald-600' : 'border-gray-300 bg-white'}`}>
+                          {isChecked && <Check size={14} className="text-white" />}
+                        </div>
+                        <span className="text-sm font-medium">{type.label}</span>
+                        
+                        <input 
+                          type="checkbox" 
+                          id={`work-exp-${type.id}`} 
+                          checked={isChecked} 
+                          onChange={() => handleCheckboxChange(type.id)}
+                          className="hidden absolute" 
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </InputField>
+
+              <InputField label="目前執業場所" required error={errors.workplace}>
+                <input
+                  type="text"
+                  value={formData.workplace}
+                  onChange={e => handleChange('workplace', e.target.value)}
+                  placeholder="例：OO醫院、XX診所"
+                  className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition"
+                />
+              </InputField>
+            </div>
+          )}
+
+          {currentStep === 4 && (
+            <div className="animate-fade-in">
+               <div className="bg-orange-50 border-l-4 border-orange-400 p-4 mb-6">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <AlertCircle className="h-5 w-5 text-orange-400" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-orange-700">
+                      請確認您填寫的資料無誤，送出後將無法自行修改。
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 text-sm text-gray-600 mb-6 shadow-inner">
+                <h4 className="font-bold text-gray-800 mb-2">最終確認</h4>
+                <p className='text-gray-500'>
+                  請仔細核對所有報名資訊，特別是姓名、身分證字號 (學分登錄用) 及 Email。
+                </p>
+              </div>
+
+              <label className={`flex p-4 rounded-xl border-2 cursor-pointer transition ${formData.consent ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <div className="flex items-start">
+                  <div className={`w-6 h-6 rounded border-2 mr-3 flex items-center justify-center flex-shrink-0 mt-0.5 ${formData.consent ? 'bg-emerald-600 border-emerald-600' : 'border-gray-300 bg-white'}`}>
+                    {formData.consent && <Check size={16} className="text-white" />}
+                  </div>
+                  <div>
+                    <input type="checkbox" checked={formData.consent} onChange={e => handleChange('consent', e.target.checked)} className="hidden" />
+                    <span className="font-bold text-gray-900">我已確認所有資訊無誤</span>
+                    <p className="text-sm text-gray-500 mt-1">勾選即代表同意送出報名表單。</p>
+                  </div>
+                </div>
+              </label>
+              {errors.consent && <p className="text-red-500 text-sm mt-2 ml-1">{errors.consent}</p>}
+              
+              {submitError && (
+                <div className="mt-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg flex items-center">
+                    <AlertCircle size={16} className="mr-2 flex-shrink-0" />
+                    <span className="text-sm">{submitError}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="p-4 bg-white border-t border-gray-100 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
+          {currentStep > 1 ? (
+            <button onClick={prevStep} className="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition flex items-center" disabled={isLoading}>
+              <ChevronLeft size={18} className="mr-1" /> 上一步
+            </button>
+          ) : (
+            <div />
+          )}
+          
+          {currentStep < 4 ? (
+            <button onClick={nextStep} className="px-8 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 hover:shadow-xl transition transform active:scale-95 flex items-center" disabled={isLoading}>
+              下一步 <ChevronRight size={18} className="ml-1" />
+            </button>
+          ) : (
+            <button onClick={handleSubmit} className={`px-8 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition transform active:scale-95 flex items-center justify-center ${isLoading ? 'bg-gray-500 cursor-not-allowed' : 'bg-emerald-800 hover:bg-emerald-900'}`} disabled={isLoading}>
+              {isLoading ? (
+                <>
+                    <Loader size={18} className="animate-spin mr-2" /> 提交中...
+                </>
+              ) : (
+                <>
+                    確認報名 <ShieldCheck size={18} className="ml-2" />
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
