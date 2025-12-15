@@ -16,7 +16,7 @@
   <style>
     html, body { font-family: "Noto Sans TC", system-ui, -apple-system, "Segoe UI", Roboto, Arial, "PingFang TC", "Microsoft JhengHei", sans-serif; }
     .animate-fade-in { animation: fadeIn .25s ease-out; }
-    @keyframes fadeIn { from{opacity:.0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)} }
+    @keyframes fadeIn { from{opacity:0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)} }
   </style>
 </head>
 
@@ -29,8 +29,8 @@
      ***********************/
     const SUBMIT_URL = "https://script.google.com/macros/s/AKfycbw9vbRh9V8fxFsrTSBJMiK0jWLdUg1iwPZ1taBUHYkR9eYFiOa6iAtyLS6CxABoMtKF/exec";
 
-    // ✅ 固定首頁圖片檔名（請把檔案放在 index.html 同一資料夾）
-    const FLYER_IMAGE_SRC ="1150124_24小時飲食回憶法.jpg";
+    // 固定首頁圖片檔名（請把檔案放在 index.html 同一資料夾）
+    const FLYER_IMAGE_SRC = "1150124_24小時飲食回憶法.jpg";
 
     const CITIES = [
       "基隆市","臺北市","新北市","桃園市","新竹市","新竹縣","苗栗縣","臺中市",
@@ -58,11 +58,19 @@
     const AGENDA = [
       { time: "12:30~12:50", content: "報到", speaker: "" },
       { time: "12:50~13:00", content: "前測及說明", speaker: "" },
-      { time: "13:00~14:40", content: "24小時回憶法簡介：方法介紹、搭配工具、資料轉換飲食攝取、如何增進精準度", speaker: "台北醫學大學\n潘文涵講座教授" },
+      {
+        time: "13:00~14:40 (100 分鐘)",
+        content: "24小時回憶法簡介：方法介紹、搭配工具、資料轉換飲食攝取、如何增進正確飲食評估精準度",
+        speaker: "台北醫學大學 潘文涵講座教授"
+      },
       { time: "14:40~14:50", content: "中場休息", speaker: "" },
-      { time: "14:50~16:30", content: "國民營養調查工作模式分享：訪談者引領技巧、食物模型使用、烹調製作詢問、外食如何評估", speaker: "國民營養調查團隊\n葉乃華博士" },
+      {
+        time: "14:50~16:30 (100 分鐘)",
+        content: "國民營養調查工作模式分享：訪談者引領技巧、食物模型使用、烹調製作詢問、外食如何評估",
+        speaker: "國民營養調查團隊 葉乃華博士"
+      },
       { time: "16:30~16:50", content: "後測", speaker: "" },
-      { time: "16:50~17:10", content: "Q&A", speaker: "" },
+      { time: "16:50~17:10", content: "Q&A", speaker: "" }
     ];
 
     /***********************
@@ -197,7 +205,10 @@
           mode: "no-cors",
           cache: "no-cache",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(state.formData),
+          body: JSON.stringify({
+            ...state.formData,
+            timestamp: state.timestamp
+          }),
         });
 
         setState({ currentStep: 5 });
@@ -285,19 +296,19 @@
     function iconSvg(name, cls="w-6 h-6") {
       const common = `class="${cls}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
       switch(name) {
-        case "chevronRight": return `<svg ${common} viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>`;
-        case "chevronLeft": return `<svg ${common} viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>`;
-        case "check": return `<svg ${common} viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>`;
+        case "chevronRight": return `<svg ${common} viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" /></svg>`;
+        case "chevronLeft": return `<svg ${common} viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg>`;
+        case "check": return `<svg ${common} viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" /></svg>`;
         case "clock": return `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
         case "mapPin": return `<svg ${common} viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
-        case "users": return `<svg ${common} viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>`;
+        case "users": return `<svg ${common} viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
         case "monitor": return `<svg ${common} viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>`;
         case "alert": return `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`;
-        case "book": return `<svg ${common} viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5V4.5A2.5 2.5 0 0 1 6.5 2Z"/></svg>`;
-        case "eye": return `<svg ${common} viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
-        case "eyeOff": return `<svg ${common} viewBox="0 0 24 24"><path d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58"/><path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c7 0 10 7 10 7a18.4 18.4 0 0 1-3.22 4.54"/><path d="M6.61 6.61A18.4 18.4 0 0 0 2 12s3 7 10 7a10.94 10.94 0 0 0 2.12-.21"/><path d="M2 2l20 20"/></svg>`;
-        case "loader": return `<svg class="${cls} animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="4"/></svg>`;
-        case "shield": return `<svg ${common} viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M9 12l2 2 4-4"/></svg>`;
+        case "book": return `<svg ${common} viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h13v16H5a2 2 0 0 1-2-2V5z"/><path d="M7 7h8"/></svg>`;
+        case "eye": return `<svg ${common} viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+        case "eyeOff": return `<svg ${common} viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-10-7-10-7a18.35 18.35 0 0 1 3.3-4.79"/><path d="M1 1l22 22"/></svg>`;
+        case "loader": return `<svg class="${cls} animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"/><path d="M22 12a10 10 0 0 0-10-10" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`;
+        case "shield": return `<svg ${common} viewBox="0 0 24 24"><path d="M12 2l7 3v6c0 5-3.58 9.74-7 11-3.42-1.26-7-6-7-11V5l7-3z"/><path d="M9 12l2 2 4-4"/></svg>`;
         default: return "";
       }
     }
@@ -346,7 +357,7 @@
           src="${FLYER_IMAGE_SRC}"
           alt="講座簡章"
           class="w-full h-full object-contain"
-          onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22600%22 height=%22800%22><rect width=%22100%25%22 height=%22100%25%22 fill=%22%23e5e7eb%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%236b7280%22 font-size=%2224%22 font-family=%22Arial%22>找不到圖片：1150124_24小時飲食回憶法.jpg</text></svg>';"
+          onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22600%22 height=%22800%22><rect width=%22100%25%22 height=%22100%25%22 fill=%22%23ddd%22/><text x=%2230%25%22 y=%2250%25%22 font-size=%2220%22 fill=%22%23666%22>Missing Image</text></svg>'"
         />
       `;
 
@@ -379,12 +390,12 @@
                     精準掌握營養評估訪談技巧，國民營養調查團隊親授，實體與線上同步開課。
                   </p>
                   <button data-action="goForm"
-                    class="bg-white text-emerald-900 text-lg font-bold py-4 px-10 rounded-full shadow-lg hover:bg-emerald-50 hover:scale-105 transition transform flex items-center justify-center md:justify-start mx-auto md:mx-0">
+                    class="bg-white text-emerald-900 text-lg font-bold py-4 px-10 rounded-full shadow-lg hover:bg-emerald-50 hover:scale-105 transition transform flex items-center justify-center">
                     立即報名參加 <span class="ml-2">${iconSvg("chevronRight","w-5 h-5")}</span>
                   </button>
                 </div>
 
-                <!-- ✅ 固定圖片框（不再可上傳） -->
+                <!-- 固定圖片框（不再可上傳） -->
                 <div class="w-full md:w-1/3 flex-shrink-0">
                   <div class="bg-white/10 backdrop-blur-sm border-2 border-white/20 rounded-xl p-2 relative overflow-hidden">
                     <div class="aspect-[3/4] bg-emerald-800/50 rounded-lg flex items-center justify-center overflow-hidden relative">
@@ -404,7 +415,7 @@
                   ${iconSvg("clock","w-6 h-6")}
                 </div>
                 <h3 class="font-bold text-gray-900 text-lg">活動時間</h3>
-                <p class="text-gray-600 mt-1">115年 1月 24日 (六)</p>
+                <p class="text-gray-600 mt-1">民國115年 1月 24日 (六)</p>
                 <p class="text-emerald-600 font-medium">12:50 - 17:20</p>
               </div>
 
@@ -538,14 +549,14 @@
 
             <div class="p-4 bg-white border-t border-gray-100 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
               ${step > 1
-                ? `<button data-action="prev" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition flex items-center ${state.isLoading ? 'opacity-60 cursor-not-allowed' : ''}" ${state.isLoading ? 'disabled' : ''}>
+                ? `<button data-action="prev" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition flex items-center ${state.isLoading ? 'opacity-60 cursor-not-allowed' : ''}">
                     <span class="mr-1 text-gray-600">${iconSvg("chevronLeft","w-5 h-5")}</span> 上一步
                   </button>`
                 : `<div></div>`
               }
 
               ${step < 4
-                ? `<button data-action="next" class="px-8 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 hover:shadow-xl transition transform active:scale-95 flex items-center ${state.isLoading ? 'opacity-60 cursor-not-allowed' : ''}" ${state.isLoading ? 'disabled' : ''}>
+                ? `<button data-action="next" class="px-8 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 hover:shadow-xl transition transform">
                     下一步 <span class="ml-1">${iconSvg("chevronRight","w-5 h-5")}</span>
                   </button>`
                 : `<button data-action="submit" class="px-8 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition transform active:scale-95 flex items-center justify-center
@@ -651,7 +662,7 @@
         content = `
           <div class="animate-fade-in space-y-2">
             ${inputWrap("國民營養調查參與經驗", true, null, "participated2016NutriSurvey", `
-              <p class="text-sm text-gray-600 mb-3 font-semibold">請問您是否曾經報名參與 <b>115 年</b> 國民營養調查？</p>
+              <p class="text-sm text-gray-600 mb-3 font-semibold">請問您是否曾經報名參與國民營養調查？</p>
               <div class="flex gap-4">
                 ${["yes","no"].map(opt => {
                   const active = fd.participated2016NutriSurvey === opt;
